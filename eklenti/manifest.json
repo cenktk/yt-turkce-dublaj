@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Türkçe Dublaj",
+  "version": "1.0",
+  "description": "Hazırlanmış Türkçe dublajı YouTube videosuyla senkron çalar (localhost:8790).",
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost:8790/*", "http://127.0.0.1:8790/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
