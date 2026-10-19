@@ -9,7 +9,7 @@ Akış: YouTube altyazısı (yt-dlp) → Türkçe çeviri (Claude Code, `claude 
 - Python 3.9+
 - `yt-dlp` ve `ffmpeg` (macOS: `brew install yt-dlp ffmpeg`)
 - [Claude Code](https://claude.com/claude-code) kurulu ve giriş yapılmış olmalı (`claude` komutu çalışmalı)
-- Alania v2 TTS API anahtarı (`PATIENTDESK_API_KEY`)
+- Alania v2 TTS API anahtarı (`PATIENTDESK_API_KEY`). Anahtarı https://speech.patientdesk.ai/tr adresinden alın.
 
 ## Kurulum
 

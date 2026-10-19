@@ -20,7 +20,7 @@ All later commands run from the repo folder.
 
 ## 3. API key (user step)
 
-Copy `.env.example` to `.env`. Then ask the user to paste their own Alania v2 TTS key (voice.patientdesk.ai) into `.env` as `PATIENTDESK_API_KEY=...`.
+Copy `.env.example` to `.env`. Then ask the user to paste their own Alania v2 TTS key into `.env` as `PATIENTDESK_API_KEY=...`. A user without a key gets one at https://speech.patientdesk.ai/tr.
 
 - Do not ask the user to paste the key into the chat. The key would stay in the chat log.
 - Check only that the value is not empty, for example: `awk -F= '/^PATIENTDESK_API_KEY=/{print length($2)}' .env`. Do not print the key.
