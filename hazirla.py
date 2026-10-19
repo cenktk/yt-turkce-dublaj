@@ -12,7 +12,9 @@ KOK = os.path.dirname(os.path.abspath(__file__))
 DUBLAJ = os.path.join(KOK, "dublaj")
 CLAUDE = shutil.which("claude") or "claude"
 TTS_URL = "https://voice.patientdesk.ai/v1/audio/speech"
-SESLER = {"nisa": "Kadın (Nisa)", "oncel": "Erkek (Oncel)"}
+SESLER = {"nisa": "Kadın (Nisa)", "oncel": "Erkek (Oncel)", "mini": "Ücretsiz (Antalia Mini)"}
+# Voice key -> (model, API voice). Antalia-2 Mini is free (x-characters: 0) and has a single voice.
+MODELLER = {"mini": ("antalia-mini", "antalia-mini")}
 MAX_TEMPO = 1.35
 
 
@@ -116,7 +118,8 @@ def seslendir(key, ses, metin, slot, wav, mp3):
     if os.path.exists(mp3):
         return
     if not os.path.exists(wav):
-        body = json.dumps({"model": "alania-v2", "voice": ses, "input": metin}).encode()
+        model, voice = MODELLER.get(ses, ("alania-v2", ses))
+        body = json.dumps({"model": model, "voice": voice, "input": metin}).encode()
         req = urllib.request.Request(TTS_URL, data=body, headers={
             "Authorization": "Bearer " + key, "Content-Type": "application/json"})
         data = urllib.request.urlopen(req, timeout=180).read()

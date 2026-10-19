@@ -38,7 +38,9 @@ Kurulumu Claude Code ile yapmak için repo linkini Claude'a verin. Adımlar `CLA
 
 ## Maliyet
 
-Ses başına yaklaşık video uzunluğu kadar karakter harcanır. 15 dakikalık bir video ses başına ~16 bin karakter tutar. Uzun videodan önce `--ilk 60` ile dene.
+**Ücretsiz (Antalia Mini)** sesi karakter harcamaz. Anahtar yine gerekir ama bu ses için ücret çıkmaz.
+
+Nisa ve Oncel seslerinde ses başına yaklaşık konuşma metni kadar karakter harcanır. 15 dakikalık bir video ses başına ~16 bin karakter tutar. Uzun videodan önce `--ilk 60` ile dene.
 
 ## Notlar
 

@@ -55,7 +55,7 @@ If an older copy of the extension is installed, the user must remove it first. C
 
 - The box at the top right of the player shows a voice list and a **Türkçe dublaj hazırla** button. The server prepares the first 90 seconds first, then the whole video.
 - On a video that already has a dub, a voice that is not made yet shows as "(hazırla)". Choosing it makes that voice too.
-- Cost: about one character per character of speech, per voice. A 15-minute video is about 16k characters per voice.
+- Cost: the **Ücretsiz (Antalia Mini)** voice is free (0 characters billed); the key is still required. Nisa and Oncel cost about one character per character of speech, per voice. A 15-minute video is about 16k characters per voice.
 - Videos without subtitles do not work.
 
 ## Troubleshooting
