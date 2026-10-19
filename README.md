@@ -29,6 +29,10 @@ python3 hazirla.py serve --port 8790
 
 İlk komut dublajı `dublaj/<videoId>/` klasörüne yazar. İkinci komut eklentinin okuduğu yerel sunucuyu açar.
 
+Sunucu açıkken URL vermek gerekmez. Dublajı olmayan videoda eklenti bir ses listesi ve "Türkçe dublaj hazırla" düğmesi gösterir. Düğme önce ilk 90 saniyeyi, sonra videonun tamamını hazırlar. Dublajı hazır videoda eksik ses listeden seçilerek sonradan eklenir.
+
+Kurulumu Claude Code ile yapmak için repo linkini Claude'a verin. Adımlar `CLAUDE.md` dosyasında.
+
 - Yalnız ilk N saniyeyi denemek için: `--ilk 60`
 - Tek ses için: `--ses nisa`
 

@@ -6,7 +6,7 @@
   python3 hazirla.py --selftest
 """
 import argparse, concurrent.futures as cf, glob, http.server, json, os, re
-import shutil, subprocess, sys, tempfile, urllib.request
+import shutil, subprocess, sys, tempfile, threading, urllib.request
 
 KOK = os.path.dirname(os.path.abspath(__file__))
 DUBLAJ = os.path.join(KOK, "dublaj")
@@ -155,17 +155,72 @@ def hazirla(url, sesler, ilk):
             if k % 20 == 0 or k == len(jobs):
                 print(f"  ses {k}/{len(jobs)}")
     shutil.rmtree(os.path.join(out, "_wav"), ignore_errors=True)  # only reached when all jobs succeeded
-    manifest = {"videoId": vid, "voices": {s: SESLER.get(s, s) for s in sesler}, "segments": [
+    # Every voice whose clips all exist, so a run for one voice keeps voices made earlier.
+    hazir = [s for s in dict.fromkeys([*SESLER, *sesler])
+             if all(os.path.exists(os.path.join(out, s, f"{i:04d}.mp3")) for i in range(n))]
+    manifest = {"videoId": vid, "voices": {s: SESLER.get(s, s) for s in hazir}, "segments": [
         {"i": i, "start": segs[i]["start"], "end": segs[i]["end"], "tr": tr[i], "en": segs[i]["en"],
-         "files": {s: f"{s}/{i:04d}.mp3" for s in sesler}} for i in range(n)]}
+         "files": {s: f"{s}/{i:04d}.mp3" for s in hazir}} for i in range(n)]}
     json.dump(manifest, open(os.path.join(out, "manifest.json"), "w"), ensure_ascii=False, indent=1)
     print(f"tamam: {os.path.join(out, 'manifest.json')}")
+
+
+ISLER, KILIT = {}, threading.Lock()  # videoId -> (thread, voice queue); one job per video at a time
+
+
+def arka_plan(vid, kuyruk):
+    url = "https://www.youtube.com/watch?v=" + vid
+    with open(os.path.join(DUBLAJ, vid + ".log"), "a") as log:
+        while True:
+            with KILIT:
+                if not kuyruk:
+                    return
+                ses = kuyruk[0]
+            # No dub yet: first 90 s so playback can start soon, then the whole video. An existing
+            # dub skips the short pass, which would rewrite its manifest with fewer segments.
+            ilkler = [[]] if os.path.exists(os.path.join(DUBLAJ, vid, "manifest.json")) else [["--ilk", "90"], []]
+            for ilk in ilkler:
+                if subprocess.run([sys.executable, os.path.abspath(__file__), url, "--ses", ses, *ilk],
+                                  stdout=log, stderr=log).returncode:
+                    with KILIT:
+                        kuyruk.clear()
+                    return
+            with KILIT:
+                kuyruk.pop(0)
 
 
 class CORS(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         super().end_headers()
+
+    def do_POST(self):
+        # The custom header forces a CORS preflight, which this server never answers, so other
+        # websites cannot start paid jobs. The extension's background script is exempt from CORS.
+        yol, _, sorgu = self.path.partition("?")
+        m = re.fullmatch(r"/(hazirla|durum)/([A-Za-z0-9_-]{11})", yol)
+        if not m or self.headers.get("X-Dublaj") != "1":
+            return self.send_error(403)
+        islem, vid = m.groups()
+        ses = re.fullmatch(r"ses=(\w+)", sorgu)
+        ses = ses.group(1) if ses and ses.group(1) in SESLER else self.server.ses
+        with KILIT:
+            t, kuyruk = ISLER.get(vid, (None, []))
+            if islem == "hazirla":
+                if t and t.is_alive():
+                    if ses not in kuyruk:
+                        kuyruk.append(ses)
+                else:
+                    kuyruk = [ses]
+                    t = threading.Thread(target=arka_plan, args=(vid, kuyruk), daemon=True)
+                    ISLER[vid] = (t, kuyruk)
+                    t.start()
+        body = json.dumps({"calisiyor": bool(t and t.is_alive()), "sesler": SESLER}, ensure_ascii=False).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
 
 def selftest():
@@ -183,11 +238,14 @@ if __name__ == "__main__":
         selftest()
     elif sys.argv[1:2] == ["serve"]:
         p = argparse.ArgumentParser(); p.add_argument("cmd"); p.add_argument("--port", type=int, default=8790)
-        port = p.parse_args().port
+        p.add_argument("--ses", default="oncel", help="voices for jobs started from the extension")
+        a = p.parse_args()
         os.makedirs(DUBLAJ, exist_ok=True)
-        handler = lambda *a, **k: CORS(*a, directory=DUBLAJ, **k)
-        print(f"http://localhost:{port}/<videoId>/manifest.json")
-        http.server.ThreadingHTTPServer(("127.0.0.1", port), handler).serve_forever()
+        handler = lambda *x, **k: CORS(*x, directory=DUBLAJ, **k)
+        print(f"http://localhost:{a.port}/<videoId>/manifest.json")
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), handler)
+        srv.ses = a.ses
+        srv.serve_forever()
     else:
         p = argparse.ArgumentParser(); p.add_argument("url")
         p.add_argument("--ses", default="nisa,oncel"); p.add_argument("--ilk", type=float)

@@ -5,10 +5,11 @@
   let st = null;   // aktif videonun durumu
   let key = '';    // son kontrol edilen videoId
   let token = 0;   // eski fetch'leri geçersiz kılmak için
+  let prepUI = null; // dublajı olmayan videoda "hazırla" düğmesi
 
   // localhost isteği arka plandan gider: sayfa (youtube.com) yerel ağa doğrudan istek atamaz.
-  const bg = (url, json) => new Promise(res => {
-    try { chrome.runtime.sendMessage({ url, json }, v => res(chrome.runtime.lastError ? null : v)); } catch { res(null); }
+  const bg = (url, json, post) => new Promise(res => {
+    try { chrome.runtime.sendMessage({ url, json, post }, v => res(chrome.runtime.lastError ? null : v)); } catch { res(null); }
   });
 
   const store = {
@@ -97,6 +98,38 @@
     tick();
   }
 
+  // Hazır sesler, ardından henüz üretilmemiş sesler için "hazırla" seçenekleri.
+  function fillVoices(sel) {
+    sel.length = 0;
+    for (const [v, label] of [['off', 'Kapalı'], ...Object.entries(st.data.voices)]) sel.add(new Option(label, v));
+    for (const [v, label] of Object.entries(st.sesler)) {
+      if (!st.data.voices[v]) sel.add(new Option(label + (st.busy ? ' (hazırlanıyor…)' : ' (hazırla)'), 'hazirla:' + v));
+    }
+    sel.value = st.voice;
+  }
+
+  // Hazırlık sürerken (önce ilk 90 sn, sonra tamamı; ya da yeni ses) manifesti yeniler.
+  function watch() {
+    const s = st;
+    clearInterval(s.refresh);
+    s.refresh = setInterval(async () => {
+      const d = await bg(BASE + 'durum/' + s.id, true, true);
+      const m = await bg(BASE + s.id + '/manifest.json', true);
+      if (s !== st) return;
+      s.busy = !!d?.calisiyor;
+      if (m?.segments && m.voices) {
+        m.segments.sort((a, b) => a.start - b.start);
+        const yeni = Object.keys(m.voices).find(v => !s.data.voices[v]);
+        s.data = m;
+        const saved = (await store.get(['dubVoice'])).dubVoice;
+        if (s !== st) return;
+        if (yeni && yeni === saved) setVoice(yeni); // istenen ses geldi: ona geç
+      }
+      fillVoices(s.ui.querySelector('select'));
+      if (!s.busy) clearInterval(s.refresh);
+    }, 15000);
+  }
+
   function buildUI() {
     const ui = document.createElement('div');
     ui.style.cssText = 'position:absolute;top:12px;right:12px;z-index:9999;display:flex;gap:8px;align-items:center;' +
@@ -104,9 +137,17 @@
     const sel = document.createElement('select');
     sel.title = 'Türkçe dublaj';
     sel.style.cssText = 'background:#222;color:#fff;border:1px solid #555;border-radius:4px;font:inherit';
-    for (const [v, label] of [['off', 'Kapalı'], ...Object.entries(st.data.voices)]) sel.add(new Option(label, v));
-    sel.value = st.voice;
-    sel.onchange = () => { store.set({ dubVoice: sel.value }); setVoice(sel.value); };
+    fillVoices(sel);
+    sel.onchange = async () => {
+      if (sel.value.startsWith('hazirla:')) { // henüz üretilmemiş ses: sunucuda hazırlat
+        const v = sel.value.slice(8);
+        store.set({ dubVoice: v });
+        await bg(BASE + 'hazirla/' + st.id + '?ses=' + v, true, true);
+        st.busy = true; fillVoices(sel); watch();
+        return;
+      }
+      store.set({ dubVoice: sel.value }); setVoice(sel.value);
+    };
     const txt = document.createElement('span');
     const rng = document.createElement('input');
     rng.type = 'range'; rng.min = 0; rng.max = 30; rng.value = Math.round(st.orig * 100);
@@ -124,23 +165,25 @@
   }
 
   function teardown() {
+    if (prepUI) { clearInterval(prepUI.timer); prepUI.remove(); prepUI = null; }
     if (!st) return;
     audio.pause(); audio.removeAttribute('src'); audio.load();
-    restoreVol(); clearInterval(st.timer); st.ac.abort(); st.ui.remove(); prune([]);
+    restoreVol(); clearInterval(st.timer); clearInterval(st.refresh); st.ac.abort(); st.ui.remove(); prune([]);
     st = null;
   }
 
   async function load(id, video, my) {
     let data;
     data = await bg(BASE + id + '/manifest.json', true);
-    if (!data) return; // sunucu yok ya da dublaj yok: sessiz kal
+    if (!data) return my === token && prep(id, video, my); // dublaj yok: hazırla düğmesi
+    const d = await bg(BASE + 'durum/' + id, true, true);
     const saved = await store.get(['dubVoice', 'dubOrig']);
     if (my !== token || !Array.isArray(data?.segments) || !data.voices) return;
     data.segments.sort((a, b) => a.start - b.start);
     const ac = new AbortController();
     st = {
       id, data, video, ac, player: video.closest('#movie_player'), cache: new Map(),
-      cur: -1, ready: -1, savedVol: null, voice: 'off',
+      cur: -1, ready: -1, savedVol: null, voice: 'off', sesler: d?.sesler || data.voices, busy: !!d?.calisiyor,
       orig: typeof saved.dubOrig === 'number' ? saved.dubOrig : 0.1,
     };
     const on = (ev, fn) => video.addEventListener(ev, fn, { signal: ac.signal });
@@ -156,6 +199,46 @@
     const v = data.voices[saved.dubVoice] ? saved.dubVoice : 'off';
     st.ui.querySelector('select').value = v;
     setVoice(v);
+    if (st.busy) watch();
+  }
+
+  // Sunucuya dublaj işi başlatır, manifest gelene kadar bekler, sonra yükler.
+  async function prep(id, video, my) {
+    const d = await bg(BASE + 'durum/' + id, true, true);
+    if (my !== token || !d) return; // sunucu kapalı: sessiz kal
+    const ui = prepUI = document.createElement('div');
+    ui.style.cssText = 'position:absolute;top:12px;right:12px;z-index:9999;display:flex;gap:8px;align-items:center;' +
+      'padding:6px 10px;border-radius:8px;background:rgba(0,0,0,.7);color:#fff;font:13px Roboto,Arial,sans-serif';
+    const sel = document.createElement('select');
+    sel.style.cssText = 'background:#222;color:#fff;border:1px solid #555;border-radius:4px;font:inherit';
+    for (const [v, label] of Object.entries(d.sesler || {})) sel.add(new Option(label, v));
+    const saved = (await store.get(['dubVoice'])).dubVoice;
+    if (d.sesler?.[saved]) sel.value = saved;
+    const btn = document.createElement('button');
+    btn.style.cssText = 'background:#c00;color:#fff;border:0;border-radius:4px;padding:3px 8px;font:inherit;cursor:pointer';
+    ui.append(sel, btn);
+    for (const e of ['click', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'keydown', 'keyup', 'wheel']) {
+      ui.addEventListener(e, ev => ev.stopPropagation());
+    }
+    const wait = () => {
+      sel.remove(); btn.remove();
+      ui.textContent = 'Türkçe dublaj hazırlanıyor…';
+      ui.timer = setInterval(async () => {
+        const m = await bg(BASE + id + '/manifest.json', true);
+        if (my !== token) return;
+        if (m) { teardown(); return load(id, video, my); }
+        const s = await bg(BASE + 'durum/' + id, true, true);
+        if (my === token && !s?.calisiyor) { clearInterval(ui.timer); ui.textContent = 'Dublaj hazırlanamadı (altyazı yok olabilir)'; }
+      }, 5000);
+    };
+    btn.textContent = 'Türkçe dublaj hazırla';
+    btn.addEventListener('click', async () => {
+      store.set({ dubVoice: sel.value }); // hazır olunca bu ses seçili açılır
+      await bg(BASE + 'hazirla/' + id + '?ses=' + sel.value, true, true);
+      wait();
+    });
+    if (d.calisiyor) wait(); // iş zaten sürüyor (sayfa yenilendi)
+    video.closest('#movie_player')?.append(ui);
   }
 
   function check() {
