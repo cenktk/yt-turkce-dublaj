@@ -134,10 +134,19 @@ def seslendir(key, ses, metin, slot, wav, mp3):
 
 
 def hazirla(url, sesler, ilk):
-    vid, words = altyazi_al(url)
-    segs = birlestir(words)
+    # Auto subtitles change between fetches, so reuse the first fetch: clip and translation
+    # numbers depend on it.
+    m = re.search(r"(?:v=|youtu\.be/|shorts/)([A-Za-z0-9_-]{11})", url)
+    kayit = m and os.path.join(DUBLAJ, m.group(1), "segmentler.json")
+    if kayit and os.path.exists(kayit):
+        vid, segs = m.group(1), json.load(open(kayit))
+    else:
+        vid, words = altyazi_al(url)
+        segs = birlestir(words)
     out = os.path.join(DUBLAJ, vid)
     os.makedirs(out, exist_ok=True)
+    if not os.path.exists(os.path.join(out, "segmentler.json")):
+        json.dump(segs, open(os.path.join(out, "segmentler.json"), "w"), ensure_ascii=False, indent=1)
     n = sum(1 for s in segs if ilk is None or s["start"] < ilk)
     print(f"{vid}: {len(segs)} segment, islenecek {n}")
     tr = cevir(segs[:n], os.path.join(out, "ceviri.json"))
@@ -152,20 +161,36 @@ def hazirla(url, sesler, ilk):
             jobs.append((key, ses, tr[i], max(slot, 0.3),
                          os.path.join(out, "_wav", ses, f"{i:04d}.wav"),
                          os.path.join(out, ses, f"{i:04d}.mp3")))
+    var = lambda s, i: os.path.exists(os.path.join(out, s, f"{i:04d}.mp3"))
+    yol = os.path.join(out, "manifest.json")
+
+    def yaz(m):
+        # Every voice whose first m clips all exist, so a run for one voice keeps voices made earlier.
+        hazir = [s for s in dict.fromkeys([*SESLER, *sesler]) if all(var(s, i) for i in range(m))]
+        manifest = {"videoId": vid, "voices": {s: SESLER.get(s, s) for s in hazir}, "segments": [
+            {"i": i, "start": segs[i]["start"], "end": segs[i]["end"], "tr": tr[i], "en": segs[i]["en"],
+             "files": {s: f"{s}/{i:04d}.mp3" for s in hazir}} for i in range(m)]}
+        json.dump(manifest, open(yol + ".part", "w"), ensure_ascii=False, indent=1)
+        os.replace(yol + ".part", yol)  # the server may be serving the old one right now
+
+    def ara_yaz():
+        # Grow a shorter existing manifest (the 90 s pass) as clips arrive, so playback does not
+        # stop at its end. Never shrink one: a new voice for a finished dub waits for the end.
+        m = next((i for i in range(n) if not all(var(s, i) for s in sesler)), n)
+        eski = len(json.load(open(yol))["segments"]) if os.path.exists(yol) else 0
+        if m > eski:
+            yaz(m)
+
     with cf.ThreadPoolExecutor(4) as ex:
         for k, f in enumerate(cf.as_completed([ex.submit(seslendir, *j) for j in jobs]), 1):
             f.result()
             if k % 20 == 0 or k == len(jobs):
                 print(f"  ses {k}/{len(jobs)}")
+            if k % 20 == 0 and k < len(jobs):
+                ara_yaz()
     shutil.rmtree(os.path.join(out, "_wav"), ignore_errors=True)  # only reached when all jobs succeeded
-    # Every voice whose clips all exist, so a run for one voice keeps voices made earlier.
-    hazir = [s for s in dict.fromkeys([*SESLER, *sesler])
-             if all(os.path.exists(os.path.join(out, s, f"{i:04d}.mp3")) for i in range(n))]
-    manifest = {"videoId": vid, "voices": {s: SESLER.get(s, s) for s in hazir}, "segments": [
-        {"i": i, "start": segs[i]["start"], "end": segs[i]["end"], "tr": tr[i], "en": segs[i]["en"],
-         "files": {s: f"{s}/{i:04d}.mp3" for s in hazir}} for i in range(n)]}
-    json.dump(manifest, open(os.path.join(out, "manifest.json"), "w"), ensure_ascii=False, indent=1)
-    print(f"tamam: {os.path.join(out, 'manifest.json')}")
+    yaz(n)
+    print(f"tamam: {yol}")
 
 
 ISLER, KILIT = {}, threading.Lock()  # videoId -> (thread, voice queue); one job per video at a time
@@ -183,7 +208,7 @@ def arka_plan(vid, kuyruk):
             # dub skips the short pass, which would rewrite its manifest with fewer segments.
             ilkler = [[]] if os.path.exists(os.path.join(DUBLAJ, vid, "manifest.json")) else [["--ilk", "90"], []]
             for ilk in ilkler:
-                if subprocess.run([sys.executable, os.path.abspath(__file__), url, "--ses", ses, *ilk],
+                if subprocess.run([sys.executable, "-u", os.path.abspath(__file__), url, "--ses", ses, *ilk],
                                   stdout=log, stderr=log).returncode:
                     with KILIT:
                         kuyruk.clear()
