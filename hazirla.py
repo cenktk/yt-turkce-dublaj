@@ -152,22 +152,24 @@ def hazirla(url, sesler, ilk):
         json.dump(segs, open(os.path.join(out, "segmentler.json"), "w"), ensure_ascii=False, indent=1)
     n = sum(1 for s in segs if ilk is None or s["start"] < ilk)
     print(f"{vid}: {len(segs)} segment, islenecek {n}")
-    tr = cevir(segs[:n], os.path.join(out, "ceviri.json"))
     key = api_key()
-    jobs = []
     for ses in sesler:
         os.makedirs(os.path.join(out, ses), exist_ok=True)
         os.makedirs(os.path.join(out, "_wav", ses), exist_ok=True)
-        for i in range(n):
-            slot = segs[i + 1]["start"] - segs[i]["start"] if i + 1 < len(segs) \
-                else segs[i]["end"] + 1.5 - segs[i]["start"]
-            jobs.append((key, ses, tr[i], max(slot, 0.3),
-                         os.path.join(out, "_wav", ses, f"{i:04d}.wav"),
-                         os.path.join(out, ses, f"{i:04d}.mp3")))
+    tr = []
+
+    def is_(ses, i):
+        slot = segs[i + 1]["start"] - segs[i]["start"] if i + 1 < len(segs) \
+            else segs[i]["end"] + 1.5 - segs[i]["start"]
+        return (key, ses, tr[i], max(slot, 0.3), os.path.join(out, "_wav", ses, f"{i:04d}.wav"),
+                os.path.join(out, ses, f"{i:04d}.mp3"))
     var = lambda s, i: os.path.exists(os.path.join(out, s, f"{i:04d}.mp3"))
     yol = os.path.join(out, "manifest.json")
 
     def yaz(m):
+        eski = len(json.load(open(yol))["segments"]) if os.path.exists(yol) else 0
+        if eski > m:
+            return  # never shrink: an --ilk run after the full dub must not cut the manifest
         # Every voice whose first m clips all exist, so a run for one voice keeps voices made earlier.
         hazir = [s for s in dict.fromkeys([*SESLER, *sesler]) if all(var(s, i) for i in range(m))]
         manifest = {"videoId": vid, "voices": {s: SESLER.get(s, s) for s in hazir}, "segments": [
@@ -177,19 +179,23 @@ def hazirla(url, sesler, ilk):
         os.replace(yol + ".part", yol)  # the server may be serving the old one right now
 
     def ara_yaz():
-        # Grow a shorter existing manifest (the 90 s pass) as clips arrive, so playback does not
-        # stop at its end. Never shrink one: a new voice for a finished dub waits for the end.
-        m = next((i for i in range(n) if not all(var(s, i) for s in sesler)), n)
-        eski = len(json.load(open(yol))["segments"]) if os.path.exists(yol) else 0
-        if m > eski:
-            yaz(m)
+        # Grow the manifest as clips arrive, so playback does not stop at the end of the 90 s pass.
+        # Clips may already exist from an earlier run, so cap at what is translated so far.
+        yaz(min(len(tr), next((i for i in range(n) if not all(var(s, i) for s in sesler)), n)))
 
+    # Translate and voice in blocks of 40 so the manifest keeps growing while later blocks are still
+    # being translated; translating everything first left playback stuck at 90 s for minutes.
+    futs = []
     with cf.ThreadPoolExecutor(4) as ex:
-        for k, f in enumerate(cf.as_completed([ex.submit(seslendir, *j) for j in jobs]), 1):
+        for b in range(0, n, 40):
+            tr = cevir(segs[:min(b + 40, n)], os.path.join(out, "ceviri.json"))
+            futs += [ex.submit(seslendir, *is_(ses, i)) for ses in sesler for i in range(b, len(tr))]
+            ara_yaz()  # the previous block's clips are mostly done by now
+        for k, f in enumerate(cf.as_completed(futs), 1):
             f.result()
-            if k % 20 == 0 or k == len(jobs):
-                print(f"  ses {k}/{len(jobs)}")
-            if k % 20 == 0 and k < len(jobs):
+            if k % 20 == 0 or k == len(futs):
+                print(f"  ses {k}/{len(futs)}")
+            if k % 20 == 0 and k < len(futs):
                 ara_yaz()
     shutil.rmtree(os.path.join(out, "_wav"), ignore_errors=True)  # only reached when all jobs succeeded
     yaz(n)

@@ -33,7 +33,7 @@ Servisi kaldırmak: `launchctl bootout gui/$(id -u)/com.yt-dublaj && rm ~/Librar
 
 Bir İngilizce YouTube videosu açın. Oynatıcının sağ üstünde bir kutu çıkar:
 
-- **Dublajı yoksa:** ses listesi ve **Türkçe dublaj hazırla** düğmesi. Düğme önce ilk 90 saniyeyi, sonra tamamını hazırlar. Kutu "hazırlanıyor…" derken bekleyin, bitince ses kendiliğinden seçilir.
+- **Dublajı yoksa:** ses listesi ve **Türkçe dublaj hazırla** düğmesi. Düğme önce ilk 90 saniyeyi hazırlar, devamı 40'ar cümlelik bloklarla birkaç dakika içinde gelir. Kutu "hazırlanıyor…" derken bekleyin, bitince ses kendiliğinden seçilir.
 - **Dublajı varsa:** ses seçici ve orijinal ses seviyesi kaydırıcısı. Henüz yapılmamış ses listede "(hazırla)" ile görünür, seçince o da üretilir.
 - **Kutu yoksa:** sunucu kapalı demektir. `curl -s -X POST -H 'X-Dublaj: 1' http://localhost:8790/durum/x` yanıt vermiyorsa adım 3'ü tekrar çalıştırın. Sunucu açıksa sayfayı yenileyin.
 
