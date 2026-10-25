@@ -49,6 +49,7 @@ python3 hazirla.py <youtube-url> --ses mini --ilk 60    # ücretsiz sesle yalnı
 - Her çeviri cümlesi ayrı bir mp3 kliptir, eklenti videonun zamanına göre klibi başlatır. Orijinal ses varsayılan %10'a iner.
 - Türkçe cümle İngilizcesinden uzun kalırsa klip en çok 1.35 kat hızlandırılır. Yine sığmazsa eklenti **videoyu yavaşlatır** (en az %70 hız), dublaj sesi sizin seçtiğiniz hızda kalır. Böylece gecikme birikmez.
 - Çeviri sesli okunacağı için rakamlar Türkçe yazıyla çevrilir ("2023" → "iki bin yirmi üç") ve parantezli açıklama kullanılmaz.
+- Çeviri Claude Code ile yapılır (`claude -p`), senin Claude kotandan düşer. Modeli seçmek için `.env` dosyasına `DUBLAJ_MODEL=sonnet` (ya da `haiku`, `opus`) yaz; boşsa Claude Code'un varsayılan modeli kullanılır.
 - Çeviri `dublaj/<videoId>/ceviri.json` dosyasında saklanır. Bir videoyu yeni istem kurallarıyla yeniden çevirmek için o dosyayı silin.
 
 ## Maliyet

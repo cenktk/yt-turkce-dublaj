@@ -62,6 +62,8 @@ def birlestir(words, gap=0.8, maxlen=12.0):
 
 def cevir(segs, cache_path):
     cache = json.load(open(cache_path)) if os.path.exists(cache_path) else {}
+    model = ayar("DUBLAJ_MODEL")  # e.g. sonnet, haiku, opus; empty = Claude Code's default model
+    secim = ["--model", model] if model else []
     todo = [(i, s["en"]) for i, s in enumerate(segs)
             if cache.get(str(i), {}).get("en") != s["en"]]
     for b in range(0, len(todo), 40):
@@ -77,7 +79,7 @@ def cevir(segs, cache_path):
             "Reply with ONLY a JSON array of objects {\"i\": <same i>, \"tr\": \"...\"}, one per input, no prose, no code fence.\n\n"
             + json.dumps([{"i": i, "en": en} for i, en in batch], ensure_ascii=False))
         for deneme in range(2):
-            out = subprocess.run([CLAUDE, "-p", prompt], capture_output=True, text=True, timeout=900).stdout
+            out = subprocess.run([CLAUDE, "-p", *secim, prompt], capture_output=True, text=True, timeout=900).stdout
             try:
                 arr = json.loads(out[out.index("["):out.rindex("]") + 1])
                 got = {int(o["i"]): str(o["tr"]).strip() for o in arr}
@@ -95,21 +97,25 @@ def cevir(segs, cache_path):
     return [cache[str(i)]["tr"] for i in range(len(segs))]
 
 
-def api_key():
-    """Ortam degiskeni, yoksa bu klasorden yukari dogru ilk .env dosyasi."""
-    if os.environ.get("PATIENTDESK_API_KEY"):
-        return os.environ["PATIENTDESK_API_KEY"]
+def ayar(ad):
+    """Ortam degiskeni, yoksa bu klasorden yukari dogru ilk .env dosyasindaki deger; yoksa None."""
+    if os.environ.get(ad):
+        return os.environ[ad]
     d = KOK
     while True:
         env = os.path.join(d, ".env")
         if os.path.exists(env):
             for line in open(env):
                 k, _, v = line.strip().removeprefix("export ").partition("=")
-                if k.strip() == "PATIENTDESK_API_KEY":
-                    return v.strip().strip("'\"")
+                if k.strip() == ad:
+                    return v.strip().strip("'\"") or None
         if os.path.dirname(d) == d:
-            sys.exit("PATIENTDESK_API_KEY yok: ortam degiskeni ya da .env dosyasi ekle")
+            return None
         d = os.path.dirname(d)
+
+
+def api_key():
+    return ayar("PATIENTDESK_API_KEY") or sys.exit("PATIENTDESK_API_KEY yok: ortam degiskeni ya da .env dosyasi ekle")
 
 
 def sure(path):
