@@ -4,7 +4,9 @@ The user gave you this repo to set up a Turkish dub for English YouTube videos. 
 
 ## 1. Clone
 
-If the repo is not on disk yet, clone it into the user's home folder:
+If the repo is not on disk yet, clone it into the user's home folder. Never leave it under `~/Documents` or
+`~/Desktop`: macOS denies background services access to those folders, so the server cannot start at login
+(launchd exit code 78). If the repo already sits there, move it with `mv` and tell the user to reload the extension.
 
 ```bash
 git clone https://github.com/cenktk/yt-turkce-dublaj.git ~/yt-turkce-dublaj
@@ -31,11 +33,15 @@ Copy `.env.example` to `.env`. Then ask the user to paste their own Alania v2 TT
 python3 hazirla.py --selftest
 ```
 
-Start the server in the background and leave it running. The extension talks only to `localhost:8790`.
+Install the server as a login service so it runs after every reboot. The extension talks only to `localhost:8790`.
+Writing to `~/Library/LaunchAgents` is often blocked for Claude; then ask the user to run this one line:
 
 ```bash
-python3 hazirla.py serve --port 8790
+sh otomatik_baslat.sh
 ```
+
+The last line must read `tamam: sunucu her girişte kendiliğinden açılır`. If the service cannot be installed,
+fall back to `python3 hazirla.py serve --port 8790` in the background for this session.
 
 Check it: `curl -s -X POST -H 'X-Dublaj: 1' http://localhost:8790/durum/dQw4w9WgXcQ` must return JSON with `"calisiyor"`.
 
@@ -61,5 +67,8 @@ If an older copy of the extension is installed, the user must remove it first. C
 ## Troubleshooting
 
 - No box on the video: check that the server runs, then refresh the page. The server log shows a `GET /<videoId>/manifest.json` line for each video the extension checks.
-- After a reboot the server is not running. Start step 4 again.
+- After a reboot the server is not running: the login service is missing. Run step 4 again.
+- `launchctl print gui/$(id -u)/com.yt-dublaj` shows `last exit code = 78`: the repo is under Documents or
+  Desktop. Move it (step 1) and run step 4 again.
+- Server log: `dublaj/serve.log`.
 - Job logs: `dublaj/<videoId>.log`.
