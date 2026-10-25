@@ -71,6 +71,9 @@ def cevir(segs, cache_path):
             "Rules: conversational spoken Turkish, concise; each Turkish line must fit roughly the same speaking "
             "time as the English. Keep product/tech names as-is (Claude, Claude Code, skill, MCP, API, prompt, etc.). "
             "Segments may be sentence fragments; translate each one on its own without merging or moving text.\n"
+            "The Turkish is read aloud by a TTS engine: write every number in Turkish words (2023 -> iki bin yirmi üç, "
+            "4K -> dört ka, 60fps -> saniyede altmış kare, GPT-3.5 -> GPT üç nokta beş); no digit 0-9 may remain. "
+            "No parentheses and no bilingual glosses: write each term once, in one form.\n"
             "Reply with ONLY a JSON array of objects {\"i\": <same i>, \"tr\": \"...\"}, one per input, no prose, no code fence.\n\n"
             + json.dumps([{"i": i, "en": en} for i, en in batch], ensure_ascii=False))
         for deneme in range(2):

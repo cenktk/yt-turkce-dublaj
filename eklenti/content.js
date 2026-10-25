@@ -53,7 +53,7 @@
     if (i + 1 < s.data.segments.length) clip(i + 1); // sonrakini önceden yükle
     if (!url) return;
     audio.src = url;
-    audio.defaultPlaybackRate = audio.playbackRate = s.video.playbackRate;
+    audio.defaultPlaybackRate = audio.playbackRate = s.rate;
     // Ofset klip süresini aşarsa tarayıcı sona sabitler: klip "ended" olur, ses çıkmaz.
     const off = s.video.currentTime - s.data.segments[i].start;
     // Önceki klip taştıysa yeni klip baştan çalar (ilk kelimeler kaybolmasın); 3 sn'den fazla gecikmede yetişmek için atlar.
@@ -64,11 +64,23 @@
     if (!s.video.paused) audio.play().catch(() => {});
   }
 
+  // Klip yuvasından uzunsa videoyu yavaşlatır (en çok %30); dublaj sesi kullanıcı hızında kalır.
+  // Tempo sınırını (1.35) aşan cümleler böyle sığar, gecikme birikmez. i < 0: hızı geri verir.
+  function fit(i) {
+    let k = 1;
+    if (i >= 0 && st.ready === i && audio.duration > 0) {
+      const segs = st.data.segments, slot = (segs[i + 1]?.start ?? segs[i].end + 1.5) - segs[i].start;
+      k = Math.max(0.7, Math.min(1, slot / audio.duration));
+    }
+    const r = st.rate * k;
+    if (Math.abs(st.video.playbackRate - r) > 0.01) { st.slow = r; st.video.playbackRate = r; }
+  }
+
   function tick() {
     if (!st) return;
     const v = st.video;
     const ad = st.player?.classList.contains('ad-showing');
-    if (st.voice === 'off' || ad) { audio.pause(); if (ad) st.cur = -1; return; }
+    if (st.voice === 'off' || ad) { audio.pause(); fit(-1); if (ad) st.cur = -1; return; }
     if (Math.abs(v.volume - st.orig) > 0.005) v.volume = st.orig;
     if (v.paused || v.seeking || v.readyState < 3) { audio.pause(); return; } // duraklama/arabellek
     const i = findSeg(st.data.segments, v.currentTime);
@@ -84,6 +96,7 @@
     } else if (i >= 0 && st.ready === i && audio.paused && !audio.ended) {
       audio.play().catch(() => {}); // duraklatmadan sonra devam
     }
+    fit(i);
   }
 
   function restoreVol() {
@@ -168,7 +181,7 @@
     if (prepUI) { clearInterval(prepUI.timer); prepUI.remove(); prepUI = null; }
     if (!st) return;
     audio.pause(); audio.removeAttribute('src'); audio.load();
-    restoreVol(); clearInterval(st.timer); clearInterval(st.refresh); st.ac.abort(); st.ui.remove(); prune([]);
+    restoreVol(); st.video.playbackRate = st.rate; clearInterval(st.timer); clearInterval(st.refresh); st.ac.abort(); st.ui.remove(); prune([]);
     st = null;
   }
 
@@ -185,6 +198,7 @@
       id, data, video, ac, player: video.closest('#movie_player'), cache: new Map(),
       cur: -1, ready: -1, savedVol: null, voice: 'off', sesler: d?.sesler || data.voices, busy: !!d?.calisiyor,
       orig: typeof saved.dubOrig === 'number' ? saved.dubOrig : 0.1,
+      rate: video.playbackRate, slow: null, // kullanıcının hızı; slow = fit()'in son yazdığı değer
     };
     const on = (ev, fn) => video.addEventListener(ev, fn, { signal: ac.signal });
     on('pause', () => audio.pause());
@@ -192,7 +206,10 @@
     on('playing', tick);
     on('seeking', () => { audio.pause(); st.cur = st.ready = -1; st.late = false; });
     on('seeked', tick);
-    on('ratechange', () => { audio.playbackRate = video.playbackRate; });
+    on('ratechange', () => { // fit()'in kendi yazdığı hız kullanıcı hızı sayılmaz
+      if (video.playbackRate !== st.slow) st.rate = video.playbackRate;
+      audio.playbackRate = st.rate;
+    });
     st.ui = buildUI();
     st.player?.append(st.ui);
     st.timer = setInterval(tick, 100);
